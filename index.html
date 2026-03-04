@@ -491,7 +491,7 @@ function selectOrderType(type, el, selClass) {
 // ============================================================
 // TAX — NC and FL only
 // ============================================================
-var TAX_STATES = ['NC','FL'];
+var TAX_STATES = ['SC','FL'];
 function isTaxable() {
   var state = (document.getElementById('q-state').value || '').toUpperCase().trim();
   var metro = (document.getElementById('q-metro').value || '').toUpperCase();
@@ -1010,7 +1010,9 @@ function generateProposal() {
   }
 
   // ── TOTALS BOX ──────────────────────────────────────────
-  if (y > H-220) { doc.addPage(); y = 50; }
+  // Need room for box (150-160pt) + some padding
+  var boxNeed = (d.notes ? 170 : 160);
+  if (y + boxNeed > H - 36) { doc.addPage(); y = 50; }
 
   var bx = W-M-236, bw = 236, bh = d.notes ? 160 : 150;
   // Box background
@@ -1050,7 +1052,11 @@ function generateProposal() {
     doc.setFont('helvetica','bold'); doc.setFontSize(9); setTxt(doc, C.mid);
     doc.text('NOTES:', M, y+14);
     doc.setFont('helvetica','normal'); doc.setFontSize(9); setTxt(doc, [85,100,120]);
-    var nl = doc.splitTextToSize(d.notes, bx-M-16);
+    var maxNoteW = bx - M - 16;
+    var nl = doc.splitTextToSize(d.notes, maxNoteW);
+    // Clamp to box height so notes don't overflow below
+    var maxLines = Math.floor((bh - 30) / 13);
+    if (nl.length > maxLines) nl = nl.slice(0, maxLines);
     doc.text(nl, M, y+28);
   }
 
@@ -1236,13 +1242,15 @@ function generateAgreement() {
   doc.line(M, y, W-M, y); y += 6;
   aSecHdr('AGREEMENT DETAILS / NOTES');
 
+  // Notes on the left (top-aligned to section start)
+  var notesStartY = y;
   if (d.notes) {
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); setTxt(doc, [85,100,120]);
     var nl2 = doc.splitTextToSize(d.notes, W/2-M-16);
-    doc.text(nl2, M+4, y+10);
+    doc.text(nl2, M+4, notesStartY+10);
   }
 
-  // Totals table right side
+  // Totals table on the right — y tracks downward as rows render
   var ttx = W/2+8, ttw = W-M-ttx;
   function agTotRow(lbl, val, big, vc) {
     setFill(doc, big ? [236,244,255] : [244,249,255]); doc.rect(ttx, y, ttw, 17, 'F');
@@ -1259,22 +1267,32 @@ function generateAgreement() {
   agTotRow('TOTAL AMOUNT DUE', fmt(d.total), true, [10,90,170]);
   agTotRow('DOWN PAYMENT', '$0.00');
   agTotRow('BALANCE DUE', fmt(d.total), true, C.text);
-  y += 10;
+  // y is now at the bottom of the totals grid; ensure it's below any notes too
+  y = Math.max(y, notesStartY + (d.notes ? doc.splitTextToSize(d.notes, W/2-M-16).length * 12 + 16 : 0));
+  y += 12;
 
   // ── SIGNATURE BLOCK ─────────────────────────────────────
-  var sigY = H - 165;
+  // Signature block needs ~165pt. If not enough room, start a new page
+  var sigBlockH = 170;
+  if (y + sigBlockH > H - 36) {
+    doc.addPage();
+    y = 50;
+  }
+  var sigY = y + 8;
 
   // EUA notice
-  setFill(doc, [255,252,242]); doc.rect(M, sigY-19, W-2*M, 19, 'F');
-  setFill(doc, C.orange); doc.rect(M, sigY-19, 3, 19, 'F');
+  setFill(doc, [255,252,242]); doc.rect(M, sigY, W-2*M, 19, 'F');
+  setFill(doc, C.orange); doc.rect(M, sigY, 3, 19, 'F');
   doc.setFont('helvetica','italic'); doc.setFontSize(7); setTxt(doc, [120,100,70]);
-  doc.text('Use of Geotab products is conditioned upon acceptance of the Geotab End User Agreement attached hereto.', M+8, sigY-8);
+  doc.text('Use of Geotab products is conditioned upon acceptance of the Geotab End User Agreement attached hereto.', M+8, sigY+12);
+  sigY += 22;
 
   // Acceptance bar
   setFill(doc, [243,247,255]); doc.rect(M, sigY, W-2*M, 18, 'F');
   doc.setFont('helvetica','normal'); doc.setFontSize(6.8); setTxt(doc, [60,75,100]);
   doc.text('BY SIGNING, CUSTOMER ACCEPTS THIS AGREEMENT AND ALL PAYMENT TERMS. RIGHTS AND OBLIGATIONS ARE GOVERNED BY THE TRAXXIS GPS SOLUTIONS COMMERCIAL', M+4, sigY+7);
   doc.text('SALES AND SERVICE AGREEMENT TERMS AND CONDITIONS.', M+4, sigY+14);
+  sigY += 22;
 
   function sigLine(lbl, val, x, yy, w) {
     setStroke(doc, [180,195,220]); doc.setLineWidth(0.5); doc.line(x, yy+17, x+w, yy+17);
@@ -1283,7 +1301,7 @@ function generateAgreement() {
     if (val) { doc.setFont('helvetica','normal'); doc.setFontSize(9); setTxt(doc, C.text); doc.text(val, x, yy+12); }
   }
 
-  var s1 = sigY + 22;
+  var s1 = sigY + 6;
   var cw = (W-2*M)/4;
   sigLine('CUSTOMER', d.company, M, s1, cw-8);
   sigLine('PROCESSED BY', 'TRAXXIS GPS SOLUTIONS', M+cw, s1, cw-8);
